@@ -122,28 +122,22 @@ func (n *NodeGroupResourceSet) addResourcesForNodeGroup() error {
 		launchTemplateData.KeyName = gfn.NewString(*n.spec.SSH.PublicKeyName)
 	}
 	if n.spec.PrivateNetworking {
-		launchTemplateData.NetworkInterfaces = []gfn.AWSEC2LaunchTemplate_NetworkInterface{
-			{
-				AssociatePublicIpAddress: gfn.False(),
-			},
-		}
+		launchTemplateData.NetworkInterfaces = []gfn.AWSEC2LaunchTemplate_NetworkInterface{{
+			AssociatePublicIpAddress: gfn.False(),
+		}}
 	} else {
-		launchTemplateData.NetworkInterfaces = []gfn.AWSEC2LaunchTemplate_NetworkInterface{
-			{
-				AssociatePublicIpAddress: gfn.True(),
-			},
-		}
+		launchTemplateData.NetworkInterfaces = []gfn.AWSEC2LaunchTemplate_NetworkInterface{{
+			AssociatePublicIpAddress: gfn.True(),
+		}}
 	}
 	if n.spec.VolumeSize > 0 {
-		launchTemplateData.BlockDeviceMappings = []gfn.AWSEC2LaunchTemplate_BlockDeviceMapping{
-			{
-				DeviceName: gfn.NewString("/dev/xvda"),
-				Ebs: &gfn.AWSEC2LaunchTemplate_Ebs{
-					VolumeSize: gfn.NewInteger(n.spec.VolumeSize),
-					VolumeType: gfn.NewString(n.spec.VolumeType),
-				},
+		launchTemplateData.BlockDeviceMappings = []gfn.AWSEC2LaunchTemplate_BlockDeviceMapping{{
+			DeviceName: gfn.NewString("/dev/xvda"),
+			Ebs: &gfn.AWSEC2LaunchTemplate_Ebs{
+				VolumeSize: gfn.NewInteger(n.spec.VolumeSize),
+				VolumeType: gfn.NewString(n.spec.VolumeType),
 			},
-		}
+		}}
 	}
 	n.newResource("NodeGroupLaunchTemplate", &gfn.AWSEC2LaunchTemplate{
 		LaunchTemplateName: launchTemplateName,
