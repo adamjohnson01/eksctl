@@ -44,41 +44,43 @@ type Tag struct {
 	PropagateAtLaunch string
 }
 
-type Template struct {
-	Description string
-	Resources   map[string]struct {
-		Properties struct {
-			Tags []Tag
+type Properties struct {
+	Tags []Tag
 
-			Path, RoleName           string
-			Roles, ManagedPolicyArns []interface{}
-			AssumeRolePolicyDocument interface{}
+	Path, RoleName           string
+	Roles, ManagedPolicyArns []interface{}
+	AssumeRolePolicyDocument interface{}
 
-			PolicyDocument struct {
-				Statement []struct {
-					Action   []string
-					Effect   string
-					Resource interface{}
-				}
-			}
-
-			LaunchTemplateData struct {
-				IamInstanceProfile              struct{ Arn interface{} }
-				UserData, InstanceType, ImageId string
-				BlockDeviceMappings             []interface{}
-				TargetGroupARNs                 []string
-				NetworkInterfaces               []struct {
-					DeviceIndex              string
-					AssociatePublicIpAddress bool
-				}
-			}
-
-			VPCZoneIdentifier interface{}
-
-			CidrIp, CidrIpv6, IpProtocol string
-			FromPort, ToPort             int
+	PolicyDocument struct {
+		Statement []struct {
+			Action   []string
+			Effect   string
+			Resource interface{}
 		}
 	}
+
+	LaunchTemplateData struct {
+		IamInstanceProfile              struct{ Arn interface{} }
+		UserData, InstanceType, ImageId string
+		BlockDeviceMappings             []interface{}
+		NetworkInterfaces               []struct {
+			DeviceIndex              int
+			AssociatePublicIpAddress bool
+		}
+	}
+
+	VPCZoneIdentifier interface{}
+
+	TargetGroupARNs                   []string
+	DesiredCapacity, MinSize, MaxSize string
+
+	CidrIp, CidrIpv6, IpProtocol string
+	FromPort, ToPort             int
+}
+
+type Template struct {
+	Description string
+	Resources   map[string]struct{ Properties Properties }
 }
 
 func kubeconfigBody(authenticator string) string {
@@ -486,6 +488,10 @@ var _ = Describe("CloudFormation template builder API", func() {
 		cfg, ng := newClusterConfigAndNodegroup(true)
 
 		ng.TargetGroupARNs = []string{"tg-arn-1", "tg-arn-2"}
+
+		// ng.MinSize = new(int)
+		// *ng.MinSize = 10
+
 		ng.IAM.InstanceRoleName = "a-named-role"
 		ng.IAM.WithAddonPolicies.AutoScaler = api.Enabled()
 
@@ -582,20 +588,28 @@ var _ = Describe("CloudFormation template builder API", func() {
 				},
 			}
 
+			ngProp := getNodeGroupProperties(obj)
+
+			Expect(ngProp.Tags).ToNot(BeNil())
+			Expect(ngProp.Tags).To(Equal(expectedTags))
+		})
+
+		It("should have target groups ARNs set", func() {
 			Expect(obj.Resources).To(HaveKey("NodeGroup"))
 			ng := obj.Resources["NodeGroup"]
 			Expect(ng).ToNot(BeNil())
 			Expect(ng.Properties).ToNot(BeNil())
-			Expect(ng.Properties.Tags).ToNot(BeNil())
-			Expect(ng.Properties.Tags).To(Equal(expectedTags))
+
+			Expect(ng.Properties.TargetGroupARNs).To(Equal([]string{"tg-arn-1", "tg-arn-2"}))
 		})
 
 		It("should have target groups ARNs set", func() {
-			Expect(obj.Resources).To(HaveKey("NodeGroupLaunchTemplate"))
+			Expect(obj.Resources).To(HaveKey("NodeGroup"))
+			ng := obj.Resources["NodeGroup"]
+			Expect(ng).ToNot(BeNil())
+			Expect(ng.Properties).ToNot(BeNil())
 
-			ltd := obj.Resources["NodeGroupLaunchTemplate"].Properties.LaunchTemplateData
-
-			Expect(ltd.TargetGroupARNs).To(Equal([]string{"tg-arn-1", "tg-arn-2"}))
+			Expect(ng.Properties.TargetGroupARNs).To(Equal([]string{"tg-arn-1", "tg-arn-2"}))
 		})
 	})
 
@@ -1010,7 +1024,7 @@ var _ = Describe("CloudFormation template builder API", func() {
 			Expect(ltd.InstanceType).To(Equal("t2.medium"))
 
 			Expect(ltd.NetworkInterfaces).To(HaveLen(1))
-			Expect(ltd.NetworkInterfaces[0].DeviceIndex).To(Equal("0"))
+			Expect(ltd.NetworkInterfaces[0].DeviceIndex).To(Equal(0))
 			Expect(ltd.NetworkInterfaces[0].AssociatePublicIpAddress).To(BeFalse())
 
 			Expect(obj.Resources["SSHIPv4"].Properties.CidrIp).To(Equal("192.168.0.0/16"))
@@ -1066,7 +1080,7 @@ var _ = Describe("CloudFormation template builder API", func() {
 			Expect(ltd.InstanceType).To(Equal("t2.large"))
 
 			Expect(ltd.NetworkInterfaces).To(HaveLen(1))
-			Expect(ltd.NetworkInterfaces[0].DeviceIndex).To(Equal("0"))
+			Expect(ltd.NetworkInterfaces[0].DeviceIndex).To(Equal(0))
 			Expect(ltd.NetworkInterfaces[0].AssociatePublicIpAddress).To(BeTrue())
 
 			Expect(obj.Resources["SSHIPv4"].Properties.CidrIp).To(Equal("0.0.0.0/0"))
@@ -1151,7 +1165,7 @@ var _ = Describe("CloudFormation template builder API", func() {
 			Expect(ltd.InstanceType).To(Equal("t2.medium"))
 
 			Expect(ltd.NetworkInterfaces).To(HaveLen(1))
-			Expect(ltd.NetworkInterfaces[0].DeviceIndex).To(Equal("0"))
+			Expect(ltd.NetworkInterfaces[0].DeviceIndex).To(Equal(0))
 			Expect(ltd.NetworkInterfaces[0].AssociatePublicIpAddress).To(BeTrue())
 
 			Expect(obj.Resources).ToNot(HaveKey("SSHIPv4"))
@@ -1759,3 +1773,11 @@ var _ = Describe("CloudFormation template builder API", func() {
 		})
 	})
 })
+
+func getNodeGroupProperties(obj *Template) Properties {
+	Expect(obj.Resources).To(HaveKey("NodeGroup"))
+	ng := obj.Resources["NodeGroup"]
+	Expect(ng).ToNot(BeNil())
+	Expect(ng.Properties).ToNot(BeNil())
+	return ng.Properties
+}

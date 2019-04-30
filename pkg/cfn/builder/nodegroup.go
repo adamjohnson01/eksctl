@@ -15,16 +15,16 @@ import (
 
 // NodeGroupResourceSet stores the resource information of the node group
 type NodeGroupResourceSet struct {
-	rs               *resourceSet
-	clusterSpec      *api.ClusterConfig
-	spec             *api.NodeGroup
-	provider         api.ClusterProvider
-	clusterStackName string
-	nodeGroupName    string
-	instanceProfile  *gfn.Value
-	securityGroups   []*gfn.Value
-	vpc              *gfn.Value
-	userData         *gfn.Value
+	rs                 *resourceSet
+	clusterSpec        *api.ClusterConfig
+	spec               *api.NodeGroup
+	provider           api.ClusterProvider
+	clusterStackName   string
+	nodeGroupName      string
+	instanceProfileARN *gfn.Value
+	securityGroups     []*gfn.Value
+	vpc                *gfn.Value
+	userData           *gfn.Value
 }
 
 // NewNodeGroupResourceSet returns a resource set for a node group embedded in a cluster config
@@ -110,26 +110,22 @@ func (n *NodeGroupResourceSet) addResourcesForNodeGroup() error {
 	launchTemplateName := gfn.MakeFnSubString(fmt.Sprintf("${%s}", gfn.StackName))
 	launchTemplateData := &gfn.AWSEC2LaunchTemplate_LaunchTemplateData{
 		IamInstanceProfile: &gfn.AWSEC2LaunchTemplate_IamInstanceProfile{
-			Arn: gfn.MakeFnGetAttString("NodeInstanceProfile.Arn"),
+			Arn: n.instanceProfileARN,
 		},
-		SecurityGroups: n.securityGroups,
-		ImageId:        gfn.NewString(n.spec.AMI),
-		InstanceType:   gfn.NewString(n.spec.InstanceType),
-		UserData:       n.userData,
+		ImageId:      gfn.NewString(n.spec.AMI),
+		InstanceType: gfn.NewString(n.spec.InstanceType),
+		UserData:     n.userData,
+		NetworkInterfaces: []gfn.AWSEC2LaunchTemplate_NetworkInterface{{
+			AssociatePublicIpAddress: gfn.NewBoolean(!n.spec.PrivateNetworking),
+			DeviceIndex:              gfn.NewInteger(0),
+			Groups:                   n.securityGroups,
+		}},
 	}
 
 	if api.IsEnabled(n.spec.SSH.Allow) && api.IsSetAndNonEmptyString(n.spec.SSH.PublicKeyName) {
 		launchTemplateData.KeyName = gfn.NewString(*n.spec.SSH.PublicKeyName)
 	}
-	if n.spec.PrivateNetworking {
-		launchTemplateData.NetworkInterfaces = []gfn.AWSEC2LaunchTemplate_NetworkInterface{{
-			AssociatePublicIpAddress: gfn.False(),
-		}}
-	} else {
-		launchTemplateData.NetworkInterfaces = []gfn.AWSEC2LaunchTemplate_NetworkInterface{{
-			AssociatePublicIpAddress: gfn.True(),
-		}}
-	}
+
 	if n.spec.VolumeSize > 0 {
 		launchTemplateData.BlockDeviceMappings = []gfn.AWSEC2LaunchTemplate_BlockDeviceMapping{{
 			DeviceName: gfn.NewString("/dev/xvda"),
@@ -139,10 +135,12 @@ func (n *NodeGroupResourceSet) addResourcesForNodeGroup() error {
 			},
 		}}
 	}
+
 	n.newResource("NodeGroupLaunchTemplate", &gfn.AWSEC2LaunchTemplate{
 		LaunchTemplateName: launchTemplateName,
 		LaunchTemplateData: launchTemplateData,
 	})
+
 	// currently goformation type system doesn't allow specifying `VPCZoneIdentifier: { "Fn::ImportValue": ... }`,
 	// and tags don't have `PropagateAtLaunch` field, so we have a custom method here until this gets resolved
 	var vpcZoneIdentifier interface{}
@@ -215,7 +213,7 @@ func (n *NodeGroupResourceSet) addResourcesForNodeGroup() error {
 	if n.spec.MaxSize != nil {
 		ngProps["MaxSize"] = fmt.Sprintf("%d", *n.spec.MaxSize)
 	}
-	if n.spec.TargetGroupARNs != nil {
+	if len(n.spec.TargetGroupARNs) > 0 {
 		ngProps["TargetGroupARNs"] = n.spec.TargetGroupARNs
 	}
 	n.newResource("NodeGroup", &awsCloudFormationResource{
